@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Wiener DL</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="bar">
+        <div class="brand">
+          <span class="brand-w">W</span>
+          <span class="brand-name">Wiener DL</span>
+        </div>
+        <button id="open-downloads" class="ghost" type="button" title="Open Downloads folder">
+          ~/Downloads ↗
+        </button>
+      </header>
+
+      <section class="hero">
+        <h1>Paste URL → MP4.</h1>
+        <p class="subtitle">YouTube, TikTok, Instagram, Twitter, Reddit, 1800+ sites. Stays on your Mac.</p>
+      </section>
+
+      <section class="form">
+        <div class="field">
+          <label for="url">URL</label>
+          <input id="url" type="url" placeholder="https://www.youtube.com/watch?v=…" autofocus spellcheck="false" />
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="quality">Quality</label>
+            <select id="quality">
+              <option value="best">Best available</option>
+              <option value="1080" selected>1080p</option>
+              <option value="720">720p</option>
+              <option value="480">480p</option>
+              <option value="audio">Audio only</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="format">Format</label>
+            <select id="format">
+              <option value="mp4" selected>MP4</option>
+              <option value="mkv">MKV</option>
+              <option value="webm">WebM</option>
+              <option value="mp3">MP3 (audio only)</option>
+              <option value="m4a">M4A (audio only)</option>
+            </select>
+          </div>
+        </div>
+
+        <button id="download" class="primary" type="button">
+          <span class="primary-label">Download</span>
+        </button>
+      </section>
+
+      <section id="status" class="status" hidden>
+        <div class="status-line" id="status-line">Preparing…</div>
+        <div class="progress"><div class="progress-fill" id="progress-fill"></div></div>
+        <pre id="log" class="log" hidden></pre>
+        <div class="status-actions" id="status-actions" hidden>
+          <button id="reveal" class="ghost" type="button">Reveal in Finder</button>
+          <button id="open-file" class="ghost" type="button">Open</button>
+          <button id="reset" class="ghost" type="button">New download</button>
+        </div>
+      </section>
+
+      <footer class="footnote">
+        <span>Bundled with <code>yt-dlp</code> + <code>ffmpeg</code>. No server, no analytics.</span>
+        <a id="site-link" href="#" target="_blank" rel="noreferrer">wienerlabs.com</a>
+      </footer>
+    </main>
+
+    <script type="module" src="/main.ts"></script>
+  </body>
+</html>

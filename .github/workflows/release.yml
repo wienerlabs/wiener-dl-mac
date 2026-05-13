@@ -1,0 +1,89 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-14
+            fetch_x86: "0"
+          - target: x86_64-apple-darwin
+            runner: macos-13
+            fetch_x86: "1"
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend deps
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Approve esbuild build script
+        run: pnpm rebuild esbuild || true
+
+      - name: Fetch sidecar binaries
+        run: |
+          chmod +x scripts/fetch-binaries.sh
+          FETCH_X86=${{ matrix.fetch_x86 }} bash scripts/fetch-binaries.sh
+
+      - name: Build app
+        env:
+          NPM_CONFIG_VERIFY_DEPS_BEFORE_RUN: "false"
+        run: pnpm exec tauri build --target ${{ matrix.target }} --bundles app dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wiener-dl-${{ matrix.target }}
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app
+            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lh artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/*.dmg
+          generate_release_notes: true

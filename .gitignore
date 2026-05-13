@@ -1,0 +1,14 @@
+node_modules
+dist
+.DS_Store
+
+# Tauri build artifacts
+src-tauri/target
+src-tauri/Cargo.lock
+
+# Sidecar binaries — too large for git, downloaded at build time
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
+
+# Auto-generated
+src-tauri/gen
