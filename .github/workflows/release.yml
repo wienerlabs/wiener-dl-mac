@@ -61,15 +61,24 @@ jobs:
           NPM_CONFIG_VERIFY_DEPS_BEFORE_RUN: "false"
         run: pnpm exec tauri build --target ${{ matrix.target }} --bundles app dmg
 
-      - name: Ad-hoc codesign (so macOS doesn't flag the app as damaged)
+      - name: Ad-hoc codesign with entitlements (PyInstaller-safe)
         run: |
           APP="src-tauri/target/${{ matrix.target }}/release/bundle/macos/Wiener DL.app"
+          ENT_SIDE="src-tauri/entitlements/sidecar.plist"
+          ENT_APP="src-tauri/entitlements/app.plist"
           xattr -cr "$APP" || true
+          # Sign sidecars first with library-validation-disabled entitlement
+          # (yt-dlp is a PyInstaller bundle; its embedded Python.framework
+          #  has a different Team ID than our ad-hoc resign.)
           for bin in "$APP/Contents/MacOS/yt-dlp" "$APP/Contents/MacOS/ffmpeg" "$APP/Contents/MacOS/ffprobe"; do
-            [ -f "$bin" ] && codesign --force --options runtime --sign - "$bin"
+            [ -f "$bin" ] && codesign --force --options runtime --entitlements "$ENT_SIDE" --sign - "$bin"
           done
-          codesign --force --deep --options runtime --sign - "$APP"
-          codesign --verify --deep --strict --verbose=2 "$APP"
+          # Sign the main binary, then the bundle WITHOUT --deep so the
+          # per-binary entitlements above are preserved.
+          codesign --force --options runtime --entitlements "$ENT_APP" --sign - "$APP/Contents/MacOS/wiener-dl"
+          codesign --force --options runtime --entitlements "$ENT_APP" --sign - "$APP"
+          codesign --verify --strict --verbose=2 "$APP"
+          codesign --display --entitlements - "$APP/Contents/MacOS/yt-dlp" | grep -A1 "disable-library-validation" || true
           for dmg in src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg; do
             codesign --force --sign - "$dmg"
           done

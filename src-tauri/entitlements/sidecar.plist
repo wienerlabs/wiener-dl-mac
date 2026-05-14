@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- yt-dlp is a PyInstaller bundle that extracts and dlopens its embedded
+         Python.framework at runtime. Hardened runtime's default library
+         validation rejects this because the extracted framework keeps its
+         original signature (different Team ID than our ad-hoc resign).
+         Disabling library validation lets PyInstaller work. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- PyInstaller writes a Python interpreter into a temp dir and executes
+         from it. This also runs JIT-style code paths. -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+
+    <!-- ffmpeg / ffprobe may dlopen codec plugins from their bundled libs;
+         keep DYLD env vars usable. -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+</dict>
+</plist>
