@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" fill="currentColor" role="img" aria-label="Wiener Labs">
+  <!-- Left leg of W (trapezoidal column slanting inward at the base) -->
+  <path d="M 195 295 L 195 705 L 305 705 L 460 380 L 360 295 Z" />
+  <!-- Right leg of W -->
+  <path d="M 540 380 L 695 705 L 805 705 L 805 295 L 640 295 Z" />
+  <!-- Apostrophe -->
+  <rect x="700" y="295" width="105" height="155" />
+</svg>
