@@ -4,7 +4,6 @@ dist
 
 # Tauri build artifacts
 src-tauri/target
-src-tauri/Cargo.lock
 
 # Sidecar binaries — too large for git, downloaded at build time
 src-tauri/binaries/*
@@ -12,3 +11,6 @@ src-tauri/binaries/*
 
 # Auto-generated
 src-tauri/gen
+
+.pnpm-store
+release

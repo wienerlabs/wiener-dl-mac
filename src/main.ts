@@ -25,11 +25,43 @@ const openFileBtn = $<HTMLButtonElement>("open-file");
 const resetBtn = $<HTMLButtonElement>("reset");
 const openDownloadsBtn = $<HTMLButtonElement>("open-downloads");
 const siteLink = $<HTMLAnchorElement>("site-link");
+const cookiesSel = $<HTMLSelectElement>("cookies");
+const engineLabel = $<HTMLElement>("engine");
+
+const COOKIES_KEY = "wiener-dl.cookies";
+const LOGIN_HINT = /log ?in|sign in|cookies|private|age.restrict|confirm you/i;
 
 let savedPath: string | null = null;
 let unlisten: UnlistenFn | null = null;
 
-siteLink.href = "https://wieners-tools.vercel.app/tr/tools/video-downloader/";
+siteLink.href = "https://tools.wienerlabs.xyz/en/tools/video-downloader/";
+
+try {
+  cookiesSel.value = localStorage.getItem(COOKIES_KEY) ?? "";
+} catch {
+  cookiesSel.value = "";
+}
+
+cookiesSel.addEventListener("change", () => {
+  try {
+    localStorage.setItem(COOKIES_KEY, cookiesSel.value);
+  } catch {
+    return;
+  }
+});
+
+invoke<{ version: string; managed: boolean } | null>("engine_status")
+  .then((engine) => {
+    engineLabel.textContent = engine ? engine.version : "unavailable";
+  })
+  .catch(() => {
+    engineLabel.textContent = "unavailable";
+  });
+
+function describeError(message: string) {
+  if (cookiesSel.value || !LOGIN_HINT.test(message)) return message;
+  return `${message} Try "Browser login" with a browser where you are signed in.`;
+}
 
 function setStatus(kind: "info" | "error" | "success" | "indeterminate", message: string, percent?: number) {
   statusBox.hidden = false;
@@ -53,6 +85,7 @@ function lockForm(locked: boolean) {
   urlInput.disabled = locked;
   qualitySel.disabled = locked;
   formatSel.disabled = locked;
+  cookiesSel.disabled = locked;
   downloadBtn.disabled = locked;
 }
 
@@ -110,9 +143,11 @@ async function startDownload() {
       savedPath = p.path;
       setStatus("success", `Saved · ${p.path.split("/").pop()}`, 100);
       actionsBox.hidden = false;
+      revealBtn.hidden = false;
+      openFileBtn.hidden = false;
       lockForm(false);
     } else if (p.kind === "error") {
-      setStatus("error", p.message);
+      setStatus("error", describeError(p.message));
       actionsBox.hidden = false;
       revealBtn.hidden = true;
       openFileBtn.hidden = true;
@@ -121,10 +156,10 @@ async function startDownload() {
   });
 
   try {
-    await invoke("download_video", { url, quality, format: effectiveFormat });
+    await invoke("download_video", { url, quality, format: effectiveFormat, cookies: cookiesSel.value || null });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    setStatus("error", msg);
+    setStatus("error", describeError(msg));
     actionsBox.hidden = false;
     revealBtn.hidden = true;
     openFileBtn.hidden = true;

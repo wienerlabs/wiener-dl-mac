@@ -1,6 +1,6 @@
 [package]
 name = "wiener-dl"
-version = "0.1.4"
+version = "0.2.0"
 description = "Paste URL → MP4. macOS video downloader."
 authors = ["Wiener Labs <baturalp@wienerlabs.com>"]
 edition = "2021"

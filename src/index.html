@@ -52,6 +52,21 @@
           </div>
         </div>
 
+        <div class="field">
+          <label for="cookies">Browser login</label>
+          <select id="cookies" aria-describedby="cookies-hint">
+            <option value="" selected>Off</option>
+            <option value="safari">Safari</option>
+            <option value="chrome">Chrome</option>
+            <option value="firefox">Firefox</option>
+            <option value="brave">Brave</option>
+            <option value="edge">Edge</option>
+          </select>
+          <p id="cookies-hint" class="hint">
+            For Instagram, private and age-restricted videos. Uses the browser's sign-in on this Mac; cookies are only sent to the site you download from. Chrome, Brave and Edge ask for Keychain access, Safari needs Full Disk Access.
+          </p>
+        </div>
+
         <button id="download" class="primary" type="button">
           <span class="primary-label">Download</span>
         </button>
@@ -70,9 +85,9 @@
 
       <footer class="footnote">
         <span class="footnote-bundle">
-          <code>yt-dlp</code>+<code>ffmpeg</code>· local, no server
+          <code>yt-dlp</code><span id="engine">checking for updates…</span>· local, no server
         </span>
-        <a id="site-link" href="#" target="_blank" rel="noreferrer">wienerlabs.com</a>
+        <a id="site-link" href="#" target="_blank" rel="noreferrer">wienerlabs.xyz</a>
       </footer>
     </main>
 

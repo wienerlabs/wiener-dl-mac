@@ -1,4 +1,6 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -38,6 +40,75 @@ enum Progress {
 #[derive(Default)]
 struct DownloadState {
     running: Mutex<bool>,
+}
+
+#[derive(Clone, Serialize)]
+struct YtDlp {
+    #[serde(skip)]
+    path: PathBuf,
+    version: String,
+    managed: bool,
+}
+
+#[derive(Default)]
+struct Engine {
+    ytdlp: Arc<Mutex<Option<YtDlp>>>,
+}
+
+const COOKIE_BROWSERS: [&str; 5] = ["safari", "chrome", "firefox", "brave", "edge"];
+
+fn sidecar_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::current_exe().ok()?.parent()?.join(name);
+    path.exists().then_some(path)
+}
+
+async fn version_of(binary: &Path) -> Option<String> {
+    let run = tokio::process::Command::new(binary)
+        .arg("--version")
+        .kill_on_drop(true)
+        .output();
+    let output = tokio::time::timeout(Duration::from_secs(60), run).await.ok()?.ok()?;
+    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (output.status.success() && !version.is_empty()).then_some(version)
+}
+
+fn install_copy(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let staged = to.with_extension("new");
+    std::fs::write(&staged, std::fs::read(from)?)?;
+    std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755))?;
+    std::fs::rename(&staged, to)
+}
+
+async fn managed_ytdlp(app: &AppHandle, bundled: &Path, bundled_version: Option<&str>) -> Option<YtDlp> {
+    let dir = app.path().app_data_dir().ok()?.join("bin");
+    std::fs::create_dir_all(&dir).ok()?;
+    let managed = dir.join("yt-dlp");
+    let current = version_of(&managed).await;
+    if current.is_none() || current.as_deref() < bundled_version {
+        install_copy(bundled, &managed).ok()?;
+    }
+    let update = tokio::process::Command::new(&managed)
+        .arg("-U")
+        .kill_on_drop(true)
+        .output();
+    let _ = tokio::time::timeout(Duration::from_secs(180), update).await;
+    let version = version_of(&managed).await?;
+    Some(YtDlp { path: managed, version, managed: true })
+}
+
+async fn prepare_ytdlp(app: &AppHandle) -> Option<YtDlp> {
+    let bundled = sidecar_path("yt-dlp")?;
+    let bundled_version = version_of(&bundled).await;
+    if let Some(found) = managed_ytdlp(app, &bundled, bundled_version.as_deref()).await {
+        return Some(found);
+    }
+    bundled_version.map(|version| YtDlp { path: bundled, version, managed: false })
+}
+
+#[tauri::command]
+async fn engine_status(engine: tauri::State<'_, Engine>) -> Result<Option<YtDlp>, String> {
+    Ok(engine.ytdlp.lock().await.clone())
 }
 
 fn downloads_dir_path() -> PathBuf {
@@ -151,6 +222,7 @@ async fn download_video(
     url: String,
     quality: String,
     format: String,
+    cookies: Option<String>,
 ) -> Result<(), String> {
     {
         let mut running = state.running.lock().await;
@@ -160,7 +232,7 @@ async fn download_video(
         *running = true;
     }
 
-    let result = run_download(&app, &url, &quality, &format).await;
+    let result = run_download(&app, &url, &quality, &format, cookies.as_deref()).await;
 
     {
         let mut running = state.running.lock().await;
@@ -178,20 +250,18 @@ async fn download_video(
     result
 }
 
-async fn run_download(
-    app: &AppHandle,
+fn build_args(
     url: &str,
     quality: &str,
     format: &str,
-) -> Result<(), String> {
-    let dl_dir = downloads_dir_path();
-    if let Err(e) = std::fs::create_dir_all(&dl_dir) {
-        return Err(format!("Cannot access Downloads folder: {e}"));
+    cookies: Option<&str>,
+    output_template: String,
+    ffmpeg_dir: Option<&Path>,
+    deno: Option<&Path>,
+) -> Result<Vec<String>, String> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("Enter a valid URL (https://...)".into());
     }
-
-    let output_template = format!("{}/%(title).200B [%(id)s].%(ext)s", dl_dir.to_string_lossy());
-
-    let format_selector = quality_format_string(quality, format);
 
     let mut args: Vec<String> = vec![
         "--no-playlist".into(),
@@ -199,7 +269,7 @@ async fn run_download(
         "--no-colors".into(),
         "--no-warnings".into(),
         "-f".into(),
-        format_selector,
+        quality_format_string(quality, format),
         "-o".into(),
         output_template,
         "--restrict-filenames".into(),
@@ -237,16 +307,71 @@ async fn run_download(
         }
     }
 
-    // Use bundled ffmpeg location (Tauri sidecar resolves to same dir as yt-dlp)
-    // yt-dlp searches PATH if not set, but we want a hermetic build.
-    if let Some(ff_path) = resolve_sidecar_path(app, "ffmpeg") {
-        if let Some(dir) = ff_path.parent() {
-            args.push("--ffmpeg-location".into());
-            args.push(dir.to_string_lossy().into_owned());
-        }
+    if let Some(dir) = ffmpeg_dir {
+        args.push("--ffmpeg-location".into());
+        args.push(dir.to_string_lossy().into_owned());
     }
 
+    if let Some(deno) = deno {
+        args.push("--js-runtimes".into());
+        args.push(format!("deno:{}", deno.to_string_lossy()));
+    }
+
+    if let Some(browser) = cookies {
+        if !COOKIE_BROWSERS.contains(&browser) {
+            return Err(format!("Unsupported browser: {browser}"));
+        }
+        args.push("--cookies-from-browser".into());
+        args.push(browser.into());
+    }
+
+    args.push("--".into());
     args.push(url.to_string());
+    Ok(args)
+}
+
+async fn run_download(
+    app: &AppHandle,
+    url: &str,
+    quality: &str,
+    format: &str,
+    cookies: Option<&str>,
+) -> Result<(), String> {
+    let dl_dir = downloads_dir_path();
+    if let Err(e) = std::fs::create_dir_all(&dl_dir) {
+        return Err(format!("Cannot access Downloads folder: {e}"));
+    }
+
+    let output_template = format!("{}/%(title).200B [%(id)s].%(ext)s", dl_dir.to_string_lossy());
+    let ffmpeg = sidecar_path("ffmpeg");
+    let deno = sidecar_path("deno");
+    let args = build_args(
+        url,
+        quality,
+        format,
+        cookies,
+        output_template,
+        ffmpeg.as_deref().and_then(Path::parent),
+        deno.as_deref(),
+    )?;
+
+    let engine = app.state::<Engine>();
+    if engine.ytdlp.try_lock().is_err() {
+        let _ = app.emit(
+            "download-progress",
+            Progress::Stage {
+                message: "Updating yt-dlp…".into(),
+            },
+        );
+    }
+    let program = engine
+        .ytdlp
+        .lock()
+        .await
+        .as_ref()
+        .map(|ytdlp| ytdlp.path.clone())
+        .or_else(|| sidecar_path("yt-dlp"))
+        .ok_or("yt-dlp is missing from the app bundle")?;
 
     let _ = app.emit(
         "download-progress",
@@ -255,12 +380,9 @@ async fn run_download(
         },
     );
 
-    let sidecar = app
+    let (mut rx, _child) = app
         .shell()
-        .sidecar("yt-dlp")
-        .map_err(|e| format!("yt-dlp sidecar not found: {e}"))?;
-
-    let (mut rx, _child) = sidecar
+        .command(program.to_string_lossy().into_owned())
         .args(&args)
         .spawn()
         .map_err(|e| format!("Failed to spawn yt-dlp: {e}"))?;
@@ -344,21 +466,6 @@ async fn run_download(
     Err("yt-dlp ended without a termination event".into())
 }
 
-fn resolve_sidecar_path(app: &AppHandle, name: &str) -> Option<PathBuf> {
-    // In bundled builds, sidecars are placed next to the main executable in the .app bundle.
-    let resource_dir = app.path().resource_dir().ok()?;
-    let candidate = resource_dir.join(name);
-    if candidate.exists() {
-        return Some(candidate);
-    }
-    // Dev: sidecar lives in src-tauri/binaries/<name>-<triple>
-    let exe = app.path().resolve(name, tauri::path::BaseDirectory::Resource).ok()?;
-    if exe.exists() {
-        return Some(exe);
-    }
-    None
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -366,7 +473,60 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
         .manage(DownloadState::default())
-        .invoke_handler(tauri::generate_handler![download_video, downloads_dir])
+        .manage(Engine::default())
+        .setup(|app| {
+            if let Ok(mut slot) = app.state::<Engine>().ytdlp.clone().try_lock_owned() {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    *slot = prepare_ytdlp(&handle).await;
+                });
+            }
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![download_video, downloads_dir, engine_status])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args_for(url: &str, cookies: Option<&str>) -> Result<Vec<String>, String> {
+        build_args(
+            url,
+            "1080",
+            "mp4",
+            cookies,
+            "/tmp/%(id)s.%(ext)s".into(),
+            Some(Path::new("/app/Contents/MacOS")),
+            Some(Path::new("/app/Contents/MacOS/deno")),
+        )
+    }
+
+    #[test]
+    fn passes_bundled_tools_and_ends_options_before_the_url() {
+        let args = args_for("https://youtu.be/dlXIzUJSYis", None).unwrap();
+        let joined = args.join(" ");
+        assert!(joined.contains("--ffmpeg-location /app/Contents/MacOS"));
+        assert!(joined.contains("--js-runtimes deno:/app/Contents/MacOS/deno"));
+        assert!(!joined.contains("--cookies-from-browser"));
+        assert_eq!(args[args.len() - 2], "--");
+        assert_eq!(args[args.len() - 1], "https://youtu.be/dlXIzUJSYis");
+    }
+
+    #[test]
+    fn accepts_only_known_browsers_for_cookies() {
+        let args = args_for("https://x.com/a/status/1", Some("firefox")).unwrap();
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "--cookies-from-browser" && pair[1] == "firefox"));
+        assert!(args_for("https://x.com/a/status/1", Some("--exec=open")).is_err());
+    }
+
+    #[test]
+    fn rejects_urls_that_are_not_http() {
+        assert!(args_for("--exec=open -a Calculator", None).is_err());
+        assert!(args_for("file:///etc/passwd", None).is_err());
+    }
 }
