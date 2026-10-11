@@ -18,8 +18,8 @@ YTDLP_BASE="https://github.com/yt-dlp/yt-dlp/releases/download/$YTDLP_TAG"
 DENO_VERSION="${DENO_VERSION:-v2.9.7}"
 FFMPEG_ARM_URL="https://www.osxexperts.net/ffmpeg711arm.zip"
 FFPROBE_ARM_URL="https://www.osxexperts.net/ffprobe711arm.zip"
-FFMPEG_X86_URL="${FFMPEG_X86_URL:-https://evermeet.cx/ffmpeg/getrelease/zip}"
-FFPROBE_X86_URL="${FFPROBE_X86_URL:-https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip}"
+FFMPEG_X86_URL="${FFMPEG_X86_URL:-https://www.osxexperts.net/ffmpeg80intel.zip}"
+FFPROBE_X86_URL="${FFPROBE_X86_URL:-https://www.osxexperts.net/ffprobe80intel.zip}"
 
 FETCH_X86="${FETCH_X86:-0}"
 
@@ -42,7 +42,7 @@ fetch_ffmpeg() {
   local out="$2"
   local tmp
   tmp=$(mktemp -d)
-  echo "→ Downloading $(basename "$out") from $url…"
+  echo "→ Downloading $(basename "$out") from ${url}…"
   curl -fL --retry 3 -o "$tmp/x.zip" "$url"
   unzip -o -q "$tmp/x.zip" -d "$tmp"
   # The zip contains a single binary — skip __MACOSX metadata and zip itself
