@@ -30,7 +30,15 @@ cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 mkdir -p "$(dirname "$OUT")"
 rm -f "$OUT"
-hdiutil create -volname "Wiener DL" -srcfolder "$STAGE" -ov -format UDZO "$OUT"
+for attempt in 1 2 3 4 5; do
+  if hdiutil create -volname "Wiener DL" -srcfolder "$STAGE" -ov -format UDZO "$OUT"; then
+    break
+  fi
+  if [ "$attempt" = 5 ]; then
+    exit 1
+  fi
+  sleep $((attempt * 5))
+done
 rm -rf "$STAGE"
 codesign --force --sign - "$OUT"
 ls -lh "$OUT"
